@@ -13,9 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Markdown to Google Docs Converter",
-  description:
-    "Convert Markdown text/files into a formatted Google Docs document and plain text output.",
+  title: "Markdown Input / Output",
+  description: "Simple Markdown input and rendered Markdown output preview.",
 };
 
 export default function RootLayout({
