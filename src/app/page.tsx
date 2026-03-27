@@ -2,6 +2,8 @@
 
 import { ChangeEvent, useMemo, useRef, useState } from "react";
 import Script from "next/script";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { GoogleTokenClient, GoogleTokenResponse } from "@/types/google";
 
 type ConvertResponse = {
@@ -37,14 +39,15 @@ Visit [Google Docs](https://docs.google.com).
 export default function Home() {
   const [markdown, setMarkdown] = useState(SAMPLE_MARKDOWN);
   const [title, setTitle] = useState("Converted Markdown Document");
-  const [plainText, setPlainText] = useState("");
   const [requestsCount, setRequestsCount] = useState<number>(0);
   const [docUrl, setDocUrl] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [isConverting, setIsConverting] = useState(false);
   const [isCreatingDoc, setIsCreatingDoc] = useState(false);
+  const [isCopying, setIsCopying] = useState(false);
   const tokenClientRef = useRef<GoogleTokenClient | null>(null);
+  const previewRef = useRef<HTMLDivElement | null>(null);
 
   const googleClientId = useMemo(
     () => process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "",
@@ -83,7 +86,6 @@ export default function Home() {
         return;
       }
 
-      setPlainText(result.plainText);
       setRequestsCount(result.requests.length);
       setStatus("Converted successfully.");
     } catch (caughtError: unknown) {
@@ -170,7 +172,6 @@ export default function Home() {
         return;
       }
 
-      setPlainText(result.plainText ?? "");
       setDocUrl(result.googleDocUrl ?? "");
       setStatus("Google Doc created successfully.");
     } catch (caughtError: unknown) {
@@ -185,122 +186,189 @@ export default function Home() {
     }
   };
 
+  const copyPreview = async () => {
+    try {
+      setIsCopying(true);
+      setError("");
+      setStatus("Copying preview...");
+      const html = previewRef.current?.innerHTML ?? "";
+
+      if (
+        html &&
+        typeof ClipboardItem !== "undefined" &&
+        navigator.clipboard &&
+        "write" in navigator.clipboard
+      ) {
+        const item = new ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([markdown], { type: "text/plain" }),
+        });
+        await navigator.clipboard.write([item]);
+      } else {
+        await navigator.clipboard.writeText(markdown);
+      }
+
+      setStatus("Preview copied to clipboard.");
+    } catch (caughtError: unknown) {
+      setStatus("");
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Failed to copy preview."
+      );
+    } finally {
+      setIsCopying(false);
+    }
+  };
+
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 p-6 md:p-10">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-fuchsia-900 px-4 py-8 text-slate-100 md:px-8 md:py-10">
       <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" />
 
-      <header className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight">
-          Markdown to Google Docs Converter
-        </h1>
-        <p className="text-sm text-slate-600">
-          Paste Markdown or upload an <code>.md</code> file, preview plain text
-          output, and create a formatted Google Doc.
-        </p>
-      </header>
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
+        <header className="rounded-2xl border border-white/20 bg-white/10 p-6 shadow-2xl backdrop-blur-md">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-2">
+              <h1 className="bg-gradient-to-r from-cyan-300 via-fuchsia-300 to-amber-200 bg-clip-text text-3xl font-extrabold tracking-tight text-transparent md:text-4xl">
+                Markdown to Google Docs Converter
+              </h1>
+              <p className="text-sm text-slate-200/90 md:text-base">
+                Write markdown, preview it live, copy rich formatting, and push to
+                Google Docs in one flow.
+              </p>
+            </div>
+            <div className="rounded-full border border-cyan-300/50 bg-cyan-400/20 px-4 py-1 text-xs font-semibold tracking-wide text-cyan-100">
+              Live Preview
+            </div>
+          </div>
+        </header>
 
-      <section className="grid gap-4 rounded-lg border border-slate-200 bg-white p-4 md:grid-cols-2">
-        <div className="space-y-2">
-          <label htmlFor="title" className="text-sm font-medium">
-            Google Doc title
-          </label>
-          <input
-            id="title"
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-          />
-        </div>
+        <section className="grid gap-4 rounded-2xl border border-white/20 bg-white/10 p-5 shadow-2xl backdrop-blur-md md:grid-cols-2">
+          <div className="space-y-2">
+            <label htmlFor="title" className="text-sm font-semibold text-slate-100">
+              Google Doc title
+            </label>
+            <input
+              id="title"
+              className="w-full rounded-xl border border-white/30 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/40"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+            />
+          </div>
 
-        <div className="space-y-2">
-          <label htmlFor="fileUpload" className="text-sm font-medium">
-            Upload Markdown file
-          </label>
-          <input
-            id="fileUpload"
-            type="file"
-            accept=".md,.markdown,.txt,text/markdown,text/plain"
-            className="block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-            onChange={onFileUpload}
-          />
-        </div>
+          <div className="space-y-2">
+            <label
+              htmlFor="fileUpload"
+              className="text-sm font-semibold text-slate-100"
+            >
+              Upload Markdown file
+            </label>
+            <input
+              id="fileUpload"
+              type="file"
+              accept=".md,.markdown,.txt,text/markdown,text/plain"
+              className="block w-full rounded-xl border border-white/30 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 file:mr-3 file:rounded-lg file:border-0 file:bg-fuchsia-500 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-fuchsia-400"
+              onChange={onFileUpload}
+            />
+          </div>
 
-        <div className="md:col-span-2 space-y-2">
-          <label htmlFor="markdown" className="text-sm font-medium">
-            Markdown input
-          </label>
-          <textarea
-            id="markdown"
-            className="min-h-72 w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-mono"
-            value={markdown}
-            onChange={(event) => setMarkdown(event.target.value)}
-          />
-        </div>
+          <div className="space-y-2 md:col-span-2">
+            <label htmlFor="markdown" className="text-sm font-semibold text-slate-100">
+              Markdown input
+            </label>
+            <textarea
+              id="markdown"
+              className="min-h-80 w-full rounded-xl border border-white/30 bg-slate-950/70 px-4 py-3 font-mono text-sm text-slate-100 outline-none transition focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/40"
+              value={markdown}
+              onChange={(event) => setMarkdown(event.target.value)}
+            />
+          </div>
 
-        <div className="md:col-span-2 flex flex-wrap gap-3">
-          <button
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-            onClick={() => {
-              void convertOnly();
-            }}
-            disabled={isConverting || isCreatingDoc || !markdown.trim()}
-          >
-            {isConverting ? "Converting..." : "Convert to Text + Requests"}
-          </button>
+          <div className="flex flex-wrap gap-3 md:col-span-2">
+            <button
+              className="rounded-xl bg-gradient-to-r from-indigo-500 to-blue-500 px-4 py-2 text-sm font-semibold text-white shadow-lg transition hover:scale-[1.02] hover:from-indigo-400 hover:to-blue-400 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => {
+                void convertOnly();
+              }}
+              disabled={isConverting || isCreatingDoc || !markdown.trim()}
+            >
+              {isConverting ? "Converting..." : "Convert to Requests"}
+            </button>
 
-          <button
-            className="rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-            onClick={() => {
-              void createGoogleDoc();
-            }}
-            disabled={isConverting || isCreatingDoc || !markdown.trim()}
-          >
-            {isCreatingDoc ? "Creating Google Doc..." : "Create Google Doc"}
-          </button>
-        </div>
-      </section>
+            <button
+              className="rounded-xl bg-gradient-to-r from-cyan-500 to-emerald-500 px-4 py-2 text-sm font-semibold text-slate-900 shadow-lg transition hover:scale-[1.02] hover:from-cyan-400 hover:to-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => {
+                void createGoogleDoc();
+              }}
+              disabled={isConverting || isCreatingDoc || !markdown.trim()}
+            >
+              {isCreatingDoc ? "Creating Google Doc..." : "Create Google Doc"}
+            </button>
 
-      <section className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <h2 className="mb-2 text-lg font-semibold">Conversion Result</h2>
-          <p className="mb-2 text-sm text-slate-600">
-            Generated Google Docs requests:{" "}
-            <span className="font-semibold">{requestsCount}</span>
-          </p>
-          <textarea
-            readOnly
-            className="min-h-72 w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm"
-            value={plainText}
-            placeholder="Plain text output will appear here..."
-          />
-        </div>
+            <button
+              className="rounded-xl bg-gradient-to-r from-fuchsia-500 to-pink-500 px-4 py-2 text-sm font-semibold text-white shadow-lg transition hover:scale-[1.02] hover:from-fuchsia-400 hover:to-pink-400 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => {
+                void copyPreview();
+              }}
+              disabled={isConverting || isCreatingDoc || isCopying || !markdown.trim()}
+            >
+              {isCopying ? "Copying..." : "Copy Preview"}
+            </button>
+          </div>
+        </section>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <h2 className="mb-2 text-lg font-semibold">Status</h2>
-          {status ? <p className="text-sm text-emerald-700">{status}</p> : null}
-          {error ? <p className="text-sm text-red-700">{error}</p> : null}
-          {docUrl ? (
-            <p className="mt-3 text-sm">
-              Open document:{" "}
-              <a
-                href={docUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-medium text-blue-700 underline"
-              >
-                {docUrl}
-              </a>
+        <section className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-2xl border border-white/20 bg-white/10 p-5 shadow-2xl backdrop-blur-md">
+            <h2 className="mb-2 text-lg font-bold text-cyan-200">Markdown Preview</h2>
+            <p className="mb-3 text-sm text-slate-200">
+              Generated Google Docs requests:{" "}
+              <span className="rounded-md bg-cyan-500/20 px-2 py-0.5 font-semibold text-cyan-100">
+                {requestsCount}
+              </span>
             </p>
-          ) : null}
+            <div
+              ref={previewRef}
+              className="min-h-80 w-full overflow-auto rounded-xl border border-white/25 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 [&_a]:text-cyan-300 [&_a]:underline [&_blockquote]:border-l-4 [&_blockquote]:border-fuchsia-400/70 [&_blockquote]:pl-3 [&_blockquote]:italic [&_code]:rounded [&_code]:bg-slate-700 [&_code]:px-1 [&_h1]:mb-2 [&_h1]:mt-4 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:mt-4 [&_h3]:text-lg [&_h3]:font-semibold [&_li]:ml-5 [&_li]:list-disc [&_ol_li]:list-decimal [&_p]:my-2 [&_pre]:overflow-auto [&_pre]:rounded [&_pre]:bg-slate-800 [&_pre]:p-2"
+            >
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
+            </div>
+          </div>
 
-          {!googleClientId ? (
-            <p className="mt-4 text-sm text-amber-700">
-              Set <code>NEXT_PUBLIC_GOOGLE_CLIENT_ID</code> to enable Google
-              Docs export.
-            </p>
-          ) : null}
-        </div>
-      </section>
+          <div className="rounded-2xl border border-white/20 bg-white/10 p-5 shadow-2xl backdrop-blur-md">
+            <h2 className="mb-3 text-lg font-bold text-fuchsia-200">Status</h2>
+            {status ? (
+              <p className="rounded-xl border border-emerald-300/40 bg-emerald-500/15 px-3 py-2 text-sm text-emerald-100">
+                {status}
+              </p>
+            ) : null}
+            {error ? (
+              <p className="mt-2 rounded-xl border border-rose-300/40 bg-rose-500/15 px-3 py-2 text-sm text-rose-100">
+                {error}
+              </p>
+            ) : null}
+            {docUrl ? (
+              <p className="mt-3 rounded-xl border border-cyan-300/40 bg-cyan-500/15 px-3 py-2 text-sm text-cyan-100">
+                Open document:{" "}
+                <a
+                  href={docUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold text-cyan-200 underline hover:text-cyan-100"
+                >
+                  {docUrl}
+                </a>
+              </p>
+            ) : null}
+
+            {!googleClientId ? (
+              <p className="mt-4 rounded-xl border border-amber-300/40 bg-amber-500/15 px-3 py-2 text-sm text-amber-100">
+                Set <code>NEXT_PUBLIC_GOOGLE_CLIENT_ID</code> to enable Google
+                Docs export.
+              </p>
+            ) : null}
+          </div>
+        </section>
+      </div>
     </div>
   );
 }
