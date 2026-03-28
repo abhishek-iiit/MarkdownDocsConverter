@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -20,6 +20,39 @@ Visit [Markdown Guide](https://www.markdownguide.org).
 
 export default function Home() {
   const [markdown, setMarkdown] = useState(SAMPLE_MARKDOWN);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "success" | "error">("idle");
+  const outputRef = useRef<HTMLDivElement>(null);
+
+  const handleCopyWithFormatting = async () => {
+    const renderedHtml = outputRef.current?.innerHTML;
+
+    if (!renderedHtml) {
+      setCopyStatus("error");
+      return;
+    }
+
+    try {
+      if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+        const htmlBlob = new Blob([renderedHtml], { type: "text/html" });
+        const textBlob = new Blob([markdown], { type: "text/plain" });
+
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/html": htmlBlob,
+            "text/plain": textBlob,
+          }),
+        ]);
+      } else {
+        await navigator.clipboard.writeText(markdown);
+      }
+
+      setCopyStatus("success");
+      setTimeout(() => setCopyStatus("idle"), 2000);
+    } catch {
+      setCopyStatus("error");
+      setTimeout(() => setCopyStatus("idle"), 2000);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-fuchsia-900 px-4 py-8 text-slate-100 md:px-8 md:py-10">
@@ -57,8 +90,22 @@ export default function Home() {
 
         <section className="grid gap-4">
           <div className="rounded-2xl border border-white/20 bg-white/10 p-5 shadow-2xl backdrop-blur-md">
-            <h2 className="mb-2 text-lg font-bold text-cyan-200">Markdown Output</h2>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-lg font-bold text-cyan-200">Markdown Output</h2>
+              <button
+                type="button"
+                onClick={handleCopyWithFormatting}
+                className="rounded-lg border border-cyan-300/60 bg-cyan-400/20 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-300/30 focus:outline-none focus:ring-2 focus:ring-cyan-300/60"
+              >
+                {copyStatus === "success"
+                  ? "Copied"
+                  : copyStatus === "error"
+                    ? "Copy failed"
+                    : "Copy with formatting"}
+              </button>
+            </div>
             <div
+              ref={outputRef}
               className="min-h-80 w-full overflow-auto rounded-xl border border-white/25 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 [&_a]:text-cyan-300 [&_a]:underline [&_blockquote]:border-l-4 [&_blockquote]:border-fuchsia-400/70 [&_blockquote]:pl-3 [&_blockquote]:italic [&_code]:rounded [&_code]:bg-slate-700 [&_code]:px-1 [&_h1]:mb-2 [&_h1]:mt-4 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:mt-4 [&_h3]:text-lg [&_h3]:font-semibold [&_li]:ml-5 [&_li]:list-disc [&_ol_li]:list-decimal [&_p]:my-2 [&_pre]:overflow-auto [&_pre]:rounded [&_pre]:bg-slate-800 [&_pre]:p-2"
             >
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
